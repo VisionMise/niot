@@ -7,6 +7,7 @@
 
 		function __construct() {
 			$this->settings 	= $this->loadSettings();
+			$this->connect();
 		}
 
 		function __destruct() {
