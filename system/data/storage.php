@@ -2,30 +2,60 @@
 
 	class storage {
 
-		protected $table;
-		protected $database;
+		public 		$ready 				= false;
+
+		protected 	$table;
+		protected 	$database;
+		protected 	$sqlLog;
+		protected  	$errors				= array();
+
+		private 	$definition;
+		private 	$definitionFile;
+		private 	$exists;
+		private 	$createdTable;
 
 		function __construct($tableName, $autoCreateTable = false) {
 			global $database;
 
-			$this->table 	= $tableName;
-			$this->database = $database;
+			$this->table 		= $tableName;
+			$this->database 	= $database;
 
-			if ($autoCreateTable and !$this->tableExists()) {
-				$this->createTable($autoCreateTable);
+			$this->exists 		= $this->tableExists();
+			$this->definition 	= $this->definition();
+
+			if ($autoCreateTable and !$this->exists) {
+				$this->exists 	= $this->createTable();
 			}
+
+			$this->ready 		= $this->exists;
 		}
 
-		private function tableExists() {
-			$sql 		= "DESCRIBE `{$this->table}`";
-			$result 	= $this->database->query($sql);
+		protected function definition() {
+			$this->definitionFile 		= getcwd().("/store/{$this->table}/table.def");
+			if (!$this->definitionFile) return $this->reportError("No Definition File: {$this->definitionFile}");
+
+			$content 			= file_get_contents($this->definitionFile);
+			if (!$content) 		return $this->reportError("Definition Empty: {$this->definitionFile}");
+
+			$transformed 		= implode(",\n", explode("\n", $content));
+
+			$sql 				= "CREATE TABLE IF NOT EXISTS {$this->table} ($transformed);";
+			return $sql;
+		}
+
+		protected function tableExists() {
+			$sql 			= "DESCRIBE `{$this->table}`";
+			$this->sqlLog[]	= $sql;
+			$result 		= $this->database->query($sql);
 			return ($result !== false);
 		}
 
-		private function update(array $record, $insertIfEmpty = false) {
+		protected function update(array $record, $insertIfEmpty = false) {
+			if (!$this->exists) return $this->reportError("Cannot Update. Table does not Exist: {$this->table}");
+
 			if (!isset($record['id'])) {
 				if ($insertIfEmpty) {
-					return $this->insert($record)
+					return $this->insert($record);
 				} else {
 					return false;
 				}
@@ -46,41 +76,69 @@
 			$updateBuffer	= array();
 			$updateStr 		= null;
 			foreach ($record as $field => $value) {
-				$updateBuffer[] 	= "`$field` = '$value`";
+				$itemValue 			= $item[$field];
+				if ($itemValue == $value) continue;
+				$updateBuffer[] 	= "`$field` = '$value'";
 			}
 			$updateStr 		= implode(", ", $updateBuffer);
 
-			$sql 			= "UPDATE `{$this->table}` SET $updateStr WHERE `id` = '$rId'"
+			$sql 			= "UPDATE `{$this->table}` SET $updateStr WHERE `id` = '$rId';";
+			$this->sqlLog[]	= $sql;
 			$result 		= $this->database->query($sql);
 			if (!$result) return false;
 
 			return $rId;
 		}
 
-		private function insert(array $record) {
+		protected function insert(array $record) {
+			if (!$this->exists) return $this->reportError("Cannot Insert. Table does not Exist: {$this->table}");
 
-			$fieldStr 	= "`".implode("`,`", array_keys($record))."`";
-			$valueStr 	= "'".implode("','", array_values($record))."'";
-			$sql 		= "INSERT INTO `{$this->table}` ($fieldStr) VALUES ($valueStr)";
-			$result 	= $this->database->query($sql);
-			if (!$result) return false;
+			$fieldStr 		= "`".implode("`,`", array_keys($record))."`";
+			$valueStr 		= "'".implode("','", array_values($record))."'";
+			$sql 			= "INSERT INTO `{$this->table}` ($fieldStr) VALUES ($valueStr)";
+			$this->sqlLog[]	= $sql;
+			$result 		= $this->database->query($sql);
+			if (!$result) 	return false;
 
-			$rId 	 	= $this->database->insert_id;
+			$rId 	 		= $this->database->insert_id;
 			return $rId;
 		}
 
-
-		public function createTable(array $fields) {
-
+		protected function reportError($err) {
+			$this->errors[microtime(true)] 	= $err;
+			return false;
 		}
 
-		public function deleteTable() {
+		protected function createTable() {
+			if (!$this->definitionFile or !$this->definition) {
+				return $this->reportError("Cannot Create Table. Definition is Empty: {$this->table}");
+			}
 
+			$this->sqlLog[]	= $this->definition;
+			$result 	= $this->database->query($this->definition);
+			if ($result === false) return $this->reportError("Table NOT Created!: {$this->table}");;
+
+			if ($this->tableExists()) {
+				$this->createdTable 	= true;
+				return true;
+			}
+
+			return false;
+		}
+
+		protected function dropTable() {
+
+			if (!$this->exists) return $this->reportError("Cannot Drop Table. Table does not Exist: {$this->table}");
+
+			return true;
 		}
 
 		public function queryTable($sql) {
+			if (!$this->exists) return $this->reportError("Cannot Query. Table does not Exist: {$this->table}");
+
+			$this->sqlLog[]	= $sql;
 			$result	= $this->database->query($sql);
-			if (!$result) return false;
+			if (!$result) return $this->reportError("Cannot Query. Bad SQL:\n$sql");;
 
 			$records 	= array();
 			while ($row = $result->fetch_assoc()) {
@@ -95,32 +153,39 @@
 		}
 
 		public function deleteRecord(record $record) {
-			if (!$record or !isset($record['id'])) return false;
-			$sql 	= "DELETE FROM `{$this->table}` WHERE `id` = '{$record['id']}'";
-			$result = $this->database->query($sql);
-			if (!$result) return false;
+			if (!$this->exists) return $this->reportError("Cannot Delete Record. Table does not Exist: {$this->table}");
+
+			if (!$record or !isset($record['id'])) return $this->reportError("Cannot Delete Record. Record or Record ID does not Exist: {$this->table}");;
+			$sql 			= "DELETE FROM `{$this->table}` WHERE `id` = '{$record['id']}'";
+			$this->sqlLog[]	= $sql;
+			$result 		= $this->database->query($sql);
+			if (!$result) 	return false;
 			return true;
 		}
 
 		public function commitRecord(record $record) {
-			if (isset($record['id'])) {
-				$id 	= $this->update($record, true);
+			if (!$this->exists) return $this->reportError("Cannot Commit Record. Table does not Exist: {$this->table}");;
+
+			if ($record->id) {
+				$id 	= $this->update($record(), true);
 			} else {
-				$id 	= $this->insert($record);
+				$id 	= $this->insert($record());
 			}
 
 			return $id;
 		}
 
 		public function record($id) {
-			$sql 	= "SELECT * FROM `{$this->table}` WHERE `id` = '$id'";
-			$result	= $this->database->query($sql);
-			if (!$result) return false;
+			if (!$this->exists) return $this->reportError("Cannot Retrieve Record. Table does not Exist: {$this->table}");;
 
-			$records 	= array();
+			$sql 			= "SELECT * FROM `{$this->table}` WHERE `id` = '$id'";
+			$this->sqlLog[]	= $sql;
+			$result			= $this->database->query($sql);
+			if (!$result) 	return false;
+
+			$records 		= array();
 			while ($row = $result->fetch_assoc()) {
-				$record 	= new record($row, $this);
-				$records[]	= $record;
+				$records[]	= $row;
 			}
 
 			return (!$records or count($records) == 0)
@@ -132,7 +197,7 @@
 
 	}
 
-	class record() {
+	class record {
 
 		protected $fields		= array();
 		protected $values 		= array();
@@ -141,16 +206,35 @@
 		private $storage		= null;
 
 		function __construct(array $newRecord = array(), storage &$store = null) {
-			$this($newRecord);
 			if ($store) $this->autoCommit($store);
+			$this($newRecord);
 		}
 
 		function __invoke(array $newRecord = array()) {
-			if ($newRecord) {
+
+			if (!empty($newRecord)) {
+
 				if ($this->isAssoc($newRecord)) {
-					$this->fields 	= array_keys($newRecord);
-					$this->values 	= array_values($newRecord);
+					if (!isset($newRecord['id'])) {
+						$this->fields 	= array_keys($newRecord);
+						$this->values 	= array_values($newRecord);
+
+						if ($this->autoCommit) $this->commit($this->storage);
+					} elseif ($newRecord['id']) {
+						if ($this->storage) {
+							$record 	= $this->storage->record($newRecord['id']);
+
+							if ($record) {
+								$this->fields 	= array_keys($record);
+								$this->values 	= array_values($record);
+							}
+						} else {
+							$this->fields 	= array_keys($newRecord);
+							$this->values 	= array_values($newRecord);
+						}
+					}
 				}
+
 			}
 
 			return array_combine($this->fields, $this->values);
@@ -161,7 +245,8 @@
 		}
 
 		function __get($key) {
-			$array 	= $this->array();
+			$array 	= $this->asArray();
+
 			return (array_key_exists($key, $array))
 				? $array[$key]
 				: null
@@ -169,9 +254,12 @@
 		}
 
 		function __set($key, $value) {
-			$array 			= $this->array();
+			$array 			= $this->asArray();
 			$array[$key]	= $value;
-			$this($array);
+			//$this($array);
+
+			$this->fields 	= array_keys($array);
+			$this->values 	= array_values($array);
 
 			if ($this->autoCommit and $this->storage) {
 				$this->commit($this->storage);
@@ -192,7 +280,7 @@
 			return $handler->deleteRecord($this);
 		}
 
-		public function array() {
+		public function asArray() {
 			return $this();
 		}
 
@@ -200,9 +288,18 @@
 		public function commit(storage &$store) {
 			$id 		= $store->commitRecord($this);
 			if ($id == false) return false;
+			return $id;
+		}
 
-			$this->id 	= $id;
-			return $this->id;
+		protected function prop($key, $value = null) {
+			if ($value) {
+				$array 			= $this->asArray();
+				$array[$key]	= $value;
+				$this->fields 	= array_keys($array);
+				$this->values 	= array_values($array);
+			}
+
+			return $this->$key;
 		}
 
 		private function isAssoc($arr) {
