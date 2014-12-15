@@ -1,23 +1,15 @@
-<pre><?php
-
-	chdir("../");
-
-	include("bootstrap.php");
-
-
-	$test 	= new storage('sample', true);
-
-	$data 	= array(
-		'id'		=> 2
-	);
-
-	$record = new record($data);
-
-
-	$record->name = "hfhfhf".microtime();
-	
-	$record->commit($test);
-
-	print_r($record);
-
-?></pre>
+<a href="system.data.storage.record.php">
+Test Record By ID on Storage Class
+</a>
+<br/>
+<a href="system.data.record.autoCommit.php">
+Test Record AutoCommit on Record Class
+</a>
+<br/>
+<a href="system.data.dumb.record.php">
+Dumb Records
+</a>
+<br/>
+<a href="system.data.smart.record.php">
+Smart Records
+</a>
