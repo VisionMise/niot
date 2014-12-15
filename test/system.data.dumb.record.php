@@ -13,7 +13,7 @@
 	# Get the record as an array from the storage #
 	$recData	= $store->record($id);
 
-	# Create a new object with useful methods form the array #
+	# Create a new object with useful methods from the array #
 	$dumbObj 	= new record($recData);
 
 	# Change the object field values with a SET #

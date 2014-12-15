@@ -13,12 +13,12 @@
 	# Get the record as an array from the storage #
 	$recData	= $store->record($id);
 
-	# Create a new object with useful methods form the array #
+	# Create a new object with useful methods from the array #
 	# Attach the storage at the time of creation #
-	$dumbObj 	= new record($recData, $store);
+	$smartObj 	= new record($recData, $store);
 
 	# Change the object field values with a SET #
-	$dumbObj->name = "New Name";
+	$smartObj->name = "New Name";
 
 	# No need to commit, once the field is set it is auto-committed to the storage #
 
@@ -40,9 +40,9 @@
 	$recData	= $store->record($id);
 
 	# Create a new object with useful methods form the array #
-	$dumbObj 	= new record($recData, $store);
+	$smartObj 	= new record($recData, $store);
 
 	# Change the object field values with a SET #
-	$dumbObj->name = "New Name";
+	$smartObj->name = "New Name";
 
-	?><pre><?php print_r($dumbObj); ?></pre>
+	?><pre><?php print_r($smartObj); ?></pre>
