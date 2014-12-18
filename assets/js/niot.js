@@ -1,23 +1,43 @@
-var niot = function() {
+var niotStore = function(tableName, url) {
 
-	this.record		= function(id) {
+	var storage 	= tableName;
 
-		var rec;
+	this.record 		= function(id, callback) {
 
+		var param 	= {
+			'storage': 		this.storage,
+			'procedure': 	'record',
+			'param': 		[id]
+		};
 
+		var request = new niotRequest(param, callback, url);
+
+	};
+
+};
+
+var niotError = function() {
+
+};
+
+var niotRequest = function(param, callback, postUrl) {
+
+	var arguments 	= param;
+	var url 		= 'ajax.php';
+	var self 		= this;
+	var resp 		= callback;
+
+	if (postUrl !== undefined && postUrl !== false) {
+		url 	= postUrl;
 	}
 
-	this.autoRecord	= function(id, time, callback) {
+	var post 		= $.post(url, arguments, function(result) {
+		resp(result);
+	}, "json");
 
-	}
-
-	this.save 		= function(record) {
-
-	}
-
-	this.search 	= function(query) {
-
-	}
+	post.fail(function() {
+		niotError();
+	});
 
 	return this;
-}
+};

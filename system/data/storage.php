@@ -3,6 +3,7 @@
 	class storage {
 
 		public 		$ready 				= false;
+		public		$smartCommit 		= true;
 
 		protected 	$table;
 		protected 	$database;
@@ -45,7 +46,7 @@
 
 		protected function tableExists() {
 			$sql 			= "DESCRIBE `{$this->table}`";
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['tableExists'][]	= $sql;
 			$result 		= $this->database->query($sql);
 			return ($result !== false);
 		}
@@ -61,13 +62,18 @@
 				}
 			}
 
-			$item 	= $this->record($record['id']);
-			if (!$item or !isset($item['id'])) {
-				if ($insertIfEmpty) {
-					return $this->insert($record);
-				} else {
-					return false;
+			if ($this->smartCommit) {
+				$item 	= $this->record($record['id']);
+
+				if (!$item or !isset($item['id'])) {
+					if ($insertIfEmpty) {
+						return $this->insert($record);
+					} else {
+						return false;
+					}
 				}
+			} else {
+				$item 	= false;
 			}
 
 			$rId 			= $record['id'];
@@ -76,14 +82,22 @@
 			$updateBuffer	= array();
 			$updateStr 		= null;
 			foreach ($record as $field => $value) {
-				$itemValue 			= $item[$field];
-				if ($itemValue == $value) continue;
+				if ($this->smartCommit) {
+					$itemValue 			= $item[$field];
+					if ($itemValue == $value) continue;
+				}
+
 				$updateBuffer[] 	= "`$field` = '$value'";
 			}
+
+			if (!$updateBuffer or !count($updateBuffer)) {
+				return $this->reportError("Update not needed. All values match database.");
+			}
+
 			$updateStr 		= implode(", ", $updateBuffer);
 
 			$sql 			= "UPDATE `{$this->table}` SET $updateStr WHERE `id` = '$rId';";
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['update'][]	= $sql;
 			$result 		= $this->database->query($sql);
 			if (!$result) return false;
 
@@ -96,7 +110,7 @@
 			$fieldStr 		= "`".implode("`,`", array_keys($record))."`";
 			$valueStr 		= "'".implode("','", array_values($record))."'";
 			$sql 			= "INSERT INTO `{$this->table}` ($fieldStr) VALUES ($valueStr)";
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['insert'][]	= $sql;
 			$result 		= $this->database->query($sql);
 			if (!$result) 	return false;
 
@@ -114,7 +128,7 @@
 				return $this->reportError("Cannot Create Table. Definition is Empty: {$this->table}");
 			}
 
-			$this->sqlLog[]	= $this->definition;
+			$this->sqlLog['createTable'][]	= $this->definition;
 			$result 	= $this->database->query($this->definition);
 			if ($result === false) return $this->reportError("Table NOT Created!: {$this->table}");;
 
@@ -136,7 +150,7 @@
 		public function queryTable($sql) {
 			if (!$this->exists) return $this->reportError("Cannot Query. Table does not Exist: {$this->table}");
 
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['queryTable'][]	= $sql;
 			$result	= $this->database->query($sql);
 			if (!$result) return $this->reportError("Cannot Query. Bad SQL:\n$sql");;
 
@@ -157,7 +171,7 @@
 
 			if (!$record or !isset($record['id'])) return $this->reportError("Cannot Delete Record. Record or Record ID does not Exist: {$this->table}");;
 			$sql 			= "DELETE FROM `{$this->table}` WHERE `id` = '{$record['id']}'";
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['deleteRecord'][]	= $sql;
 			$result 		= $this->database->query($sql);
 			if (!$result) 	return false;
 			return true;
@@ -179,7 +193,7 @@
 			if (!$this->exists) return $this->reportError("Cannot Retrieve Record. Table does not Exist: {$this->table}");;
 
 			$sql 			= "SELECT * FROM `{$this->table}` WHERE `id` = '$id'";
-			$this->sqlLog[]	= $sql;
+			$this->sqlLog['record'][]	= $sql;
 			$result			= $this->database->query($sql);
 			if (!$result) 	return false;
 
@@ -222,12 +236,8 @@
 						if ($this->autoCommit) $this->commit($this->storage);
 					} elseif ($newRecord['id']) {
 						if ($this->storage) {
-							$record 	= $this->storage->record($newRecord['id']);
-
-							if ($record) {
-								$this->fields 	= array_keys($record);
-								$this->values 	= array_values($record);
-							}
+							$this->fields 	= array_keys($newRecord);
+							$this->values 	= array_values($newRecord);							
 						} else {
 							$this->fields 	= array_keys($newRecord);
 							$this->values 	= array_values($newRecord);
